@@ -4,7 +4,7 @@
 
 [tool.flake8]
 ignore = ["D100", "D101", "D102", "D103", "W503", "W504"]
-exclude = ['.eggs', '.git', '.tox', '.venv', '.build', 'lib', 'report']
+exclude = ['.eggs', '.git', '.tox', '.venv', '.build', 'lib/charms/operator_libs_linux/', 'report']
 max-line-length = 99
 max-complexity = 10
 
@@ -17,25 +17,29 @@ exclude = '''
     | .tox
     | .venv
     | .build
-    | lib
+    | lib\/charms\/operator_libs_linux\/*
     | report
 )/
 '''
 
 [tool.isort]
 profile = "black"
+line_length = 99
 skip_glob = [
   ".eggs",
   ".git",
   ".tox",
   ".venv",
   ".build",
-  "lib",
+  "lib/charms/operator_libs_linux/*",
   "report"
 ]
 
 [tool.pylint]
 max-line-length = 99
+ignore-paths = [
+  "lib/charms/operator_libs_linux/",
+]
 
 [tool.mypy]
 warn_unused_ignores = true
@@ -43,6 +47,9 @@ warn_unused_configs = true
 warn_unreachable = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+exclude = [
+  "^lib/charms/operator_libs_linux/*"
+]
 
 ## Ignore unsupported imports
 [[tool.mypy.overrides]]
@@ -52,7 +59,7 @@ module = [
 
 [tool.coverage.run]
 relative_files = true
-source = ["src"]
+source = ["src", "lib/charms/software_inventory_exporter/"]
 omit = ["tests/**", "docs/**", "templates/**"]
 
 [tool.coverage.report]

@@ -2,74 +2,150 @@
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
+"""Unit tests for src/charm.py module."""
+from unittest.mock import MagicMock, PropertyMock, mock_open, patch
 
-import unittest
+import pytest
 
-import ops.testing
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-from ops.testing import Harness
-
-from charm import SoftwareInventoryExporterCharm
+import charm
 
 
-class TestCharm(unittest.TestCase):
-    def setUp(self):
-        # Enable more accurate simulation of container networking.
-        # For more information, see https://juju.is/docs/sdk/testing#heading--simulate-can-connect
-        ops.testing.SIMULATE_CAN_CONNECT = True
-        self.addCleanup(setattr, ops.testing, "SIMULATE_CAN_CONNECT", False)
+@pytest.mark.parametrize("resource_size", [0, 100])
+def test_snap_path_property(resource_size, harness, mocker):
+    """Test that `snap_path` property returns path only if valid resource is attached."""
+    true_path_to_resource = "/path/to/resource"
+    expected_path = true_path_to_resource if resource_size else None
+    mocker.patch.object(harness.charm.model.resources, "fetch", return_value=true_path_to_resource)
+    mocker.patch.object(charm.os.path, "getsize", return_value=resource_size)
 
-        self.harness = Harness(SoftwareInventoryExporterCharm)
-        self.addCleanup(self.harness.cleanup)
-        self.harness.begin()
+    assert harness.charm.snap_path == expected_path
 
-    def test_httpbin_pebble_ready(self):
-        # Expected plan after Pebble ready with default config
-        expected_plan = {
-            "services": {
-                "httpbin": {
-                    "override": "replace",
-                    "summary": "httpbin",
-                    "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
-                    "startup": "enabled",
-                    "environment": {"GUNICORN_CMD_ARGS": "--log-level info"},
-                }
-            },
+
+def test_snap_path_property_not_attached(harness, mocker):
+    """Test that `snap_path` property returns path only if valid resource is attached."""
+    mocker.patch.object(harness.charm.model.resources, "fetch", side_effect=charm.ModelError)
+    mocker.patch.object(charm.os.path, "getsize")
+
+    assert harness.charm.snap_path is None
+
+
+def test_exporter_property(harness):
+    """Test that 'exporter' property returns exporter 'Snap' object."""
+    exporter_snap = MagicMock()
+    harness.charm.snaps = {harness.charm.EXPORTER_SNAP_NAME: exporter_snap}
+
+    assert harness.charm.exporter == exporter_snap
+
+
+@patch.object(charm.SoftwareInventoryExporterCharm, "snap_path", PropertyMock)
+@pytest.mark.parametrize("local_snap_path", [None, "path/to/resource.snap"])
+def test_on_install_local_resource(local_snap_path, harness, mocker):
+    """Test _on_install method.
+
+    Two scenarios are tested:
+      * Snap is installed from local resource file
+      * Snap is installed from Snapstore
+    """
+    harness.charm.snap_path = local_snap_path
+    install_local_mock = mocker.patch.object(charm.snap, "install_local")
+    install_from_store_mock = mocker.patch.object(charm.snap, "ensure")
+    reconfigure_mock = mocker.patch.object(harness.charm, "reconfigure_exporter")
+    assess_status_mock = mocker.patch.object(harness.charm, "assess_status")
+
+    harness.charm._on_install(MagicMock())
+
+    if local_snap_path is None:
+        install_local_mock.assert_not_called()
+        install_from_store_mock.assert_called_once_with(
+            snap_names=harness.charm.EXPORTER_SNAP_NAME,
+            classic=True,
+            state=str(charm.snap.SnapState.Latest),
+        )
+    else:
+        install_from_store_mock.assert_not_called()
+        install_local_mock.assert_called_once_with(local_snap_path, dangerous=True, classic=True)
+
+    reconfigure_mock.assert_called_once()
+    assess_status_mock.assert_called_once()
+
+
+def test_snap_config(harness, mocker):
+    """Test charm's reaction to config change."""
+    reconfigure_exporter_mock = mocker.patch.object(harness.charm, "reconfigure_exporter")
+    update_relation_mock = mocker.patch.object(harness.charm.provider_endpoint, "update_consumers")
+    assess_status_mock = mocker.patch.object(harness.charm, "assess_status")
+
+    new_port = 10099
+    new_address = "10.0.0.10"
+    harness.update_config({"port": new_port, "bind_address": new_address})
+
+    reconfigure_exporter_mock.assert_called_once()
+    update_relation_mock.assert_called_once_with(str(new_port), new_address)
+    assess_status_mock.assert_called_once()
+
+
+@patch.object(charm.SoftwareInventoryExporterCharm, "exporter", PropertyMock)
+def test_reconfigure_exporter(harness, mocker):
+    """Test helper function that updates config and restarts exporter service."""
+    render_config_mock = mocker.patch.object(harness.charm, "render_exporter_config")
+    exporter_snap = MagicMock()
+    harness.charm.exporter = exporter_snap
+
+    harness.charm.reconfigure_exporter()
+
+    render_config_mock.assert_called_once()
+    exporter_snap.restart.assert_called_once()
+
+
+def test_render_exporter_config(harness, mocker):
+    """Test function that renders exporter's configuration file."""
+    yaml_dump_mock = mocker.patch.object(charm.yaml, "safe_dump")
+    expected_config = {
+        "settings": {
+            "bind_address": harness.charm.config.get("bind_address"),
+            "port": harness.charm.config.get("port"),
         }
-        # Simulate the container coming up and emission of pebble-ready event
-        self.harness.container_pebble_ready("httpbin")
-        # Get the plan now we've run PebbleReady
-        updated_plan = self.harness.get_container_pebble_plan("httpbin").to_dict()
-        # Check we've got the plan we expected
-        self.assertEqual(expected_plan, updated_plan)
-        # Check the service was started
-        service = self.harness.model.unit.get_container("httpbin").get_service("httpbin")
-        self.assertTrue(service.is_running())
-        # Ensure we set an ActiveStatus with no message
-        self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+    }
 
-    def test_config_changed_valid_can_connect(self):
-        # Ensure the simulated Pebble API is reachable
-        self.harness.set_can_connect("httpbin", True)
-        # Trigger a config-changed event with an updated value
-        self.harness.update_config({"log-level": "debug"})
-        # Get the plan now we've run PebbleReady
-        updated_plan = self.harness.get_container_pebble_plan("httpbin").to_dict()
-        updated_env = updated_plan["services"]["httpbin"]["environment"]
-        # Check the config change was effective
-        self.assertEqual(updated_env, {"GUNICORN_CMD_ARGS": "--log-level debug"})
-        self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+    open_file_function = mock_open()
+    with patch("builtins.open", open_file_function) as file_open_mock:
+        harness.charm.render_exporter_config()
+        file_open_mock.assert_called_once_with(harness.charm.EXPORTER_CONF, "w", encoding="UTF-8")
 
-    def test_config_changed_valid_cannot_connect(self):
-        # Trigger a config-changed event with an updated value
-        self.harness.update_config({"log-level": "debug"})
-        # Check the charm is in WaitingStatus
-        self.assertIsInstance(self.harness.model.unit.status, WaitingStatus)
+    yaml_dump_mock.assert_called_once_with(expected_config, open_file_function())
 
-    def test_config_changed_invalid(self):
-        # Ensure the simulated Pebble API is reachable
-        self.harness.set_can_connect("httpbin", True)
-        # Trigger a config-changed event with an updated value
-        self.harness.update_config({"log-level": "foobar"})
-        # Check the charm is in BlockedStatus
-        self.assertIsInstance(self.harness.model.unit.status, BlockedStatus)
+
+@patch.object(
+    charm.SoftwareInventoryExporterCharm, "exporter", PropertyMock(return_value=MagicMock())
+)
+@pytest.mark.parametrize(
+    "service_running, expected_state", [(True, charm.ActiveStatus), (False, charm.BlockedStatus)]
+)
+def test_assess_status(service_running, expected_state, harness, mocker):
+    """Test function that sets the final status of the unit."""
+    mocker.patch.object(harness.charm, "is_exporter_running", return_value=service_running)
+
+    harness.charm.assess_status()
+
+    assert isinstance(harness.charm.unit.status, expected_state)
+
+
+@patch.object(charm.SoftwareInventoryExporterCharm, "exporter", new_callable=PropertyMock)
+@pytest.mark.parametrize("exporter_running", [True, False])
+def test_is_exporter_running(exporter, exporter_running, harness):
+    """Test helper method that returns whether the exporter service is running or not."""
+    service_map = {harness.charm.EXPORTER_SNAP_NAME: {"active": exporter_running}}
+    exporter_snap_mock = PropertyMock()
+    exporter_snap_mock.services = service_map
+    exporter.return_value = exporter_snap_mock
+
+    assert harness.charm.is_exporter_running() == exporter_running
+
+
+def test_on_update_status(harness, mocker):
+    """Test that _on_update method triggers unit status assessment."""
+    assess_status_mock = mocker.patch.object(harness.charm, "assess_status")
+
+    harness.charm._on_update_status(MagicMock())
+
+    assess_status_mock.assert_called_once()

@@ -1,43 +1,32 @@
 # This file populates the Overview on Charmhub.
 # See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
 
-# The charm package name, no spaces (required)
-# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
 name: software-inventory-exporter
- 
-# The following metadata are human-readable and will be published prominently on Charmhub.
-
-# (Recommended)
-display-name: Charm Template
-
-# (Required)
-summary: A very short one-line summary of the charm.
+display-name: Software Inventory Exporter
+summary: Charm that exports software inventory information
 
 description: |
-  A single sentence that says what the charm is, concisely and memorably.
+  This charm installs a Software Inventory Exporter snap
+  https://snapcraft.io/software-inventory-exporter/ 
 
-  A paragraph of one to three short sentences, that describe what the charm does.
+  Purpose of this subordinate charm is to export information about software
+  packages and their versions installed on the machine.
 
-  A third paragraph that explains what need the charm meets.
+subordinate: true
 
-  Finally, a paragraph that describes whom the charm is useful for.
+provides:
+  software-inventory:
+    interface: software-inventory
 
-# The containers and resources metadata apply to Kubernetes charms only.
-# Remove them if not required.
+requires:
+  subordinate:
+    interface: juju-info
+    scope: container
 
-# Your workload’s containers.
-containers:
-  httpbin:
-    resource: httpbin-image
-
-# This field populates the Resources tab on Charmhub.
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
-  httpbin-image:
-    type: oci-image
-    description: OCI image for httpbin
-    # The upstream-source field is ignored by Juju. It is included here as a reference
-    # so the integration testing suite knows which image to deploy during testing. This field
-    # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: kennethreitz/httpbin
+  exporter-snap:
+    type: file
+    filename: inventory-exporter.snap
+    description: |
+      (Optional) Snap containing Software Inventory Exporter. If the resource is not
+      provided, the charm will use Snapstore to download it.

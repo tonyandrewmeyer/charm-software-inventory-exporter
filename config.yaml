@@ -4,11 +4,13 @@
 # See https://juju.is/docs/config for guidance.
 
 options:
-  # An example config option to customise the log level of the workload
-  log-level:
+  port:
+    type: int
+    default: 8675
     description: |
-      Configures the log level of gunicorn. 
-
-      Acceptable values are: "info", "debug", "warning", "error" and "critical"
-    default: "info"
+      Http port to serve requests on.
+  bind_address:
     type: string
+    default: 0.0.0.0
+    description: |
+      IP address to bind to. Defaults to all.
