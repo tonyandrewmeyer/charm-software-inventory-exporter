@@ -6,7 +6,7 @@
 from dataclasses import asdict
 from unittest.mock import MagicMock, call
 
-import pytest
+from charms.software_inventory_exporter.v0 import software_inventory
 from charms.software_inventory_exporter.v0.software_inventory import (
     ExporterConfig,
     SoftwareInventoryConsumer,
@@ -40,43 +40,12 @@ def test_provider_on_consumer_joined(mocker):
     update_relation_mock.assert_called_once_with(relation_mock)
 
 
-def test_provider_update_relation_data_explicit_binding(generic_charm_harness):
+def test_provider_update_relation_data_explicit_binding(generic_charm_harness, mocker):
     """Test 'Provider' updating unit data in relations if explicit exporter address is defined."""
     local_charm = generic_charm_harness.charm
     local_unit = local_charm.unit.name
-    exporter_addr = "10.0.0.10"
-    model_name = generic_charm_harness.model.name
-
-    with generic_charm_harness.hooks_disabled():
-        rel_id = generic_charm_harness.add_relation("software-inventory", "collector")
-        generic_charm_harness.add_relation_unit(rel_id, "collector/0")
-
-    relation = generic_charm_harness.model.relations["software-inventory"][0]
-    endpoint = SoftwareInventoryProvider(charm=local_charm, bound_address=exporter_addr)
-
-    endpoint._update_relation_data(relation)
-
-    expected_relation_data = ExporterConfig(endpoint.bound_address, endpoint.port, model_name)
-    assert asdict(expected_relation_data) == generic_charm_harness.get_relation_data(
-        rel_id, local_unit
-    )
-
-
-def test_provider_update_relation_data_implicit_binding(generic_charm_harness, mocker):
-    """Test 'Provider' updating unit data in relations if exporter listens on all adrresses.
-
-    This happens when exporter's configuration is '0.0.0.0'. In this case, bind address
-    of a relation endpoint should be used instead.
-    """
-    local_charm = generic_charm_harness.charm
-    local_unit = local_charm.unit.name
-    model_name = generic_charm_harness.model.name
-    binding_address = "192.168.100.1"
-    relation_binding = MagicMock()
-    relation_binding.network.bind_address = binding_address
-    mocker.patch.object(
-        generic_charm_harness.charm.model, "get_binding", return_value=relation_binding
-    )
+    hostname = "test.machine.0"
+    mocker.patch.object(software_inventory.socket, "gethostname", return_value=hostname)
 
     with generic_charm_harness.hooks_disabled():
         rel_id = generic_charm_harness.add_relation("software-inventory", "collector")
@@ -87,32 +56,12 @@ def test_provider_update_relation_data_implicit_binding(generic_charm_harness, m
 
     endpoint._update_relation_data(relation)
 
-    expected_relation_data = ExporterConfig(binding_address, endpoint.port, model_name)
-    assert asdict(expected_relation_data) == generic_charm_harness.get_relation_data(
-        rel_id, local_unit
-    )
-
-
-def test_provider_update_relation_data_implicit_binding_fails(generic_charm_harness, mocker):
-    """Test 'Provider' updating unit data in relations if exporter listens on all adrresses.
-
-    This happens when exporter's configuration is '0.0.0.0'. In this case, bind address
-    of a relation endpoint should be used instead.
-
-    This test scenario test failure of getting relation binding.
-    """
-    local_charm = generic_charm_harness.charm
-    mocker.patch.object(generic_charm_harness.charm.model, "get_binding", return_value=None)
-
-    with generic_charm_harness.hooks_disabled():
-        rel_id = generic_charm_harness.add_relation("software-inventory", "collector")
-        generic_charm_harness.add_relation_unit(rel_id, "collector/0")
-
-    relation = generic_charm_harness.model.relations["software-inventory"][0]
-    endpoint = SoftwareInventoryProvider(charm=local_charm)
-
-    with pytest.raises(RuntimeError):
-        endpoint._update_relation_data(relation)
+    expected_data = {
+        "hostname": hostname,
+        "model": endpoint.model.name,
+        "port": endpoint.port,
+    }
+    assert expected_data == generic_charm_harness.get_relation_data(rel_id, local_unit)
 
 
 def test_provider_update_consumers(generic_charm_harness, mocker):
@@ -157,9 +106,18 @@ def test_consumer_all_exporters(generic_charm_harness):
         rel_id = generic_charm_harness.add_relation(relation_name, "sw-exporter")
         for index, unit in enumerate(remote_units):
             generic_charm_harness.add_relation_unit(rel_id, unit)
-            unit_data = ExporterConfig(f"10.0.0.{index + 1}", "5000", "test_model")
-            generic_charm_harness.update_relation_data(rel_id, unit, asdict(unit_data))
-            expected_data.append(unit_data)
+            unit_data = ExporterConfig(f"juju-unit.{index + 1}", "5000", "test_model")
+            unit_data_dict = asdict(unit_data)
+            unit_data_dict["ingress-address"] = f"10.0.0.{index + 1}"
+            generic_charm_harness.update_relation_data(rel_id, unit, unit_data_dict)
+            expected_data.append(
+                ExporterConfig(
+                    hostname=unit_data.hostname,
+                    port=unit_data.port,
+                    model=unit_data.model,
+                    ingress_ip=unit_data_dict["ingress-address"],
+                )
+            )
 
     consumer = SoftwareInventoryConsumer(generic_charm_harness.charm, relation_name)
 

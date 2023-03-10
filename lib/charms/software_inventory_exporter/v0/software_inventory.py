@@ -33,6 +33,7 @@ class MyCharm(CharmBase):
 ```
 You can file bugs [here](https://github.com/canonical/charm-software-inventory-exporter/issues)!
 """
+import socket
 from dataclasses import asdict, dataclass
 from typing import List
 
@@ -64,6 +65,7 @@ class ExporterConfig:
     hostname: str
     port: str
     model: str
+    ingress_ip: str = ""
 
 
 class SoftwareInventoryConsumer(Object):
@@ -87,11 +89,13 @@ class SoftwareInventoryConsumer(Object):
         for relation in provider_relations:
             for unit in relation.units:
                 remote_data = relation.data[unit]
+                ingress = remote_data.get("ingress-address") or remote_data.get("private-address")
                 exporter_configs.append(
                     ExporterConfig(
                         port=remote_data["port"],
                         hostname=remote_data["hostname"],
                         model=remote_data["model"],
+                        ingress_ip=ingress,
                     )
                 )
 
@@ -132,13 +136,7 @@ class SoftwareInventoryProvider(Object):
 
     def _update_relation_data(self, relation: Relation) -> None:
         """Update data in a single relation according to the current config."""
-        host = self.bound_address
-        if host == "0.0.0.0":
-            endpoint_binding = self.charm.model.get_binding(relation)
-            if endpoint_binding is None:
-                raise RuntimeError(f"Failed to get binding for a relation {relation.name}")
-            host = str(endpoint_binding.network.bind_address)
-
+        host = socket.gethostname()
         relation_data = ExporterConfig(model=self.model.name, hostname=host, port=self.port)
         relation.data[self.charm.unit].update(asdict(relation_data))
 
