@@ -44,7 +44,6 @@ class SoftwareInventoryExporterCharm(CharmBase):
     def __init__(self, framework: Framework) -> None:
         """Initialize charm."""
         super().__init__(framework)
-        self.snaps = snap.SnapCache()
 
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -78,7 +77,8 @@ class SoftwareInventoryExporterCharm(CharmBase):
     @property
     def exporter(self) -> snap.Snap:
         """Return Snap object representing Software Inventory Exporter snap."""
-        return self.snaps[self.EXPORTER_SNAP_NAME]
+        cache = snap.SnapCache()
+        return cache[self.EXPORTER_SNAP_NAME]
 
     def _on_install(self, _: Union[InstallEvent, UpgradeCharmEvent]) -> None:
         """Install Software Inventory Exporter snap.
@@ -86,13 +86,9 @@ class SoftwareInventoryExporterCharm(CharmBase):
         Snap can be installed either from local resource or from Snapstore.
         """
         if self.snap_path:
-            snap.install_local(self.snap_path, dangerous=True, classic=True)
+            snap.install_local(self.snap_path, dangerous=True)
         else:
-            snap.ensure(
-                snap_names=self.EXPORTER_SNAP_NAME,
-                classic=True,
-                state=str(snap.SnapState.Latest),
-            )
+            self.exporter.ensure(snap.SnapState.Latest)
 
         self.reconfigure_exporter()
         self.assess_status()

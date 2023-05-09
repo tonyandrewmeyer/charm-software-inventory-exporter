@@ -1,0 +1,14 @@
+charm_name: software-inventory-exporter
+
+gate_bundles:
+  - jammy
+  - focal
+
+tests:
+  - tests.test_charm.SoftwareInventoryExporterTests
+
+target_deploy_status:
+  software-inventory-exporter:
+    workload-status-message-prefix: "Unit is ready."
+  ubuntu:
+    workload-status-message-prefix: ""

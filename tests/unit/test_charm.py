@@ -29,10 +29,12 @@ def test_snap_path_property_not_attached(harness, mocker):
     assert harness.charm.snap_path is None
 
 
-def test_exporter_property(harness):
+def test_exporter_property(harness, mocker):
     """Test that 'exporter' property returns exporter 'Snap' object."""
     exporter_snap = MagicMock()
-    harness.charm.snaps = {harness.charm.EXPORTER_SNAP_NAME: exporter_snap}
+    mocker.patch.object(
+        charm.snap, "SnapCache", return_value={harness.charm.EXPORTER_SNAP_NAME: exporter_snap}
+    )
 
     assert harness.charm.exporter == exporter_snap
 
@@ -46,6 +48,10 @@ def test_on_install_local_resource(local_snap_path, harness, mocker):
       * Snap is installed from local resource file
       * Snap is installed from Snapstore
     """
+    exporter_snap = MagicMock()
+    mocker.patch.object(
+        charm.snap, "SnapCache", return_value={"software-inventory-exporter": exporter_snap}
+    )
     harness.charm.snap_path = local_snap_path
     install_local_mock = mocker.patch.object(charm.snap, "install_local")
     install_from_store_mock = mocker.patch.object(charm.snap, "ensure")
@@ -56,14 +62,12 @@ def test_on_install_local_resource(local_snap_path, harness, mocker):
 
     if local_snap_path is None:
         install_local_mock.assert_not_called()
-        install_from_store_mock.assert_called_once_with(
-            snap_names=harness.charm.EXPORTER_SNAP_NAME,
-            classic=True,
-            state=str(charm.snap.SnapState.Latest),
+        exporter_snap.ensure.assert_called_once_with(
+            charm.snap.SnapState.Latest,
         )
     else:
         install_from_store_mock.assert_not_called()
-        install_local_mock.assert_called_once_with(local_snap_path, dangerous=True, classic=True)
+        install_local_mock.assert_called_once_with(local_snap_path, dangerous=True)
 
     reconfigure_mock.assert_called_once()
     assess_status_mock.assert_called_once()

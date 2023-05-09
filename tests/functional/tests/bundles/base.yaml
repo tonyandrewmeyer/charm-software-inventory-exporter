@@ -1,0 +1,4 @@
+applications:
+  ubuntu:
+    charm: ch:ubuntu
+    num_units: 1
