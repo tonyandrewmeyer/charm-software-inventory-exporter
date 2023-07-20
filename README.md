@@ -7,6 +7,8 @@ Avoid using this README file for information that is maintained or published els
 
 Use links instead.
 -->
+[![Charmhub Badge](https://charmhub.io/software-inventory-exporter/badge.svg)](https://charmhub.io/software-inventory-exporter)
+[![Release Edge](https://github.com/canonical/charm-software-inventory-exporter/actions/workflows/release.yaml/badge.svg)](https://github.com/canonical/charm-software-inventory-exporter/actions/workflows/release.yaml)
 
 # software-inventory-exporter
 
