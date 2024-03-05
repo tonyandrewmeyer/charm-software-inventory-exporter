@@ -25,8 +25,6 @@ class GenericCharm(CharmBase):
     implementation of the "main" charm.
     """
 
-    on = SoftwareInventoryEvents()
-
 
 @pytest.fixture()
 def harness() -> ops.testing.Harness[SoftwareInventoryExporterCharm]:
@@ -51,7 +49,11 @@ def model_name() -> str:
 def generic_charm_harness(model_name) -> ops.testing.Harness[GenericCharm]:
     """Return harness with generic charm that can be used to test 'software-inventory' library."""
     ops.testing.SIMULATE_CAN_CONNECT = True
-    harness = ops.testing.Harness(GenericCharm)
+    harness = ops.testing.Harness(GenericCharm, meta="""
+requires:
+  software-inventory:
+    interface: software-inventory
+""")
     harness.set_model_name(model_name)
     harness.begin()
 
